@@ -22,8 +22,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.preference.PreferenceManager;
-import android.util.TypedValue;
 
+import net.orange_box.storebox.adapters.StoreBoxTypeAdapter;
 import net.orange_box.storebox.annotations.method.DefaultValue;
 import net.orange_box.storebox.annotations.method.KeyByResource;
 import net.orange_box.storebox.annotations.method.KeyByString;
@@ -33,13 +33,14 @@ import net.orange_box.storebox.enums.DefaultValueMode;
 import net.orange_box.storebox.enums.PreferencesMode;
 import net.orange_box.storebox.enums.PreferencesType;
 import net.orange_box.storebox.enums.SaveMode;
-import net.orange_box.storebox.utils.TypeUtil;
+import net.orange_box.storebox.internal.TypeAdapterApplicator;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * This is where the magic happens...
@@ -57,6 +58,8 @@ class StoreBoxInvocationHandler implements InvocationHandler {
     private final SharedPreferences prefs;
     private final SharedPreferences.Editor editor;
     private final Resources res;
+
+    private final TypeAdapterApplicator typeAdapterApplicator;
     
     private final SaveMode saveMode;
     private final DefaultValueMode defaultValueMode;
@@ -69,7 +72,8 @@ class StoreBoxInvocationHandler implements InvocationHandler {
             String openNameValue,
             PreferencesMode preferencesMode,
             SaveMode saveMode,
-            DefaultValueMode defaultValueMode) {
+            DefaultValueMode defaultValueMode,
+            Map<Class, Class<? extends StoreBoxTypeAdapter>> typeAdapters) {
         
         switch (preferencesType) {
             case ACTIVITY:
@@ -89,6 +93,13 @@ class StoreBoxInvocationHandler implements InvocationHandler {
         
         editor = prefs.edit();
         res = context.getResources();
+        
+        typeAdapterApplicator = new TypeAdapterApplicator(
+                prefs,
+                editor,
+                res,
+                defaultValueMode,
+                typeAdapters);
         
         this.saveMode = saveMode;
         this.defaultValueMode = defaultValueMode;
@@ -164,39 +175,8 @@ class StoreBoxInvocationHandler implements InvocationHandler {
             
             /*
              * Set.
-             * 
-             * Argument types are boxed for us, so we only need to check one
-             * variant.
              */
-            final Object value = getValueArg(args);
-            final Class<?> type = value.getClass();
-            
-            if (type == Boolean.class) {
-                
-                editor.putBoolean(key, (Boolean) value);
-                
-            } else if (type == Float.class) {
-                
-                editor.putFloat(key, (Float) value);
-                
-            } else if (type == Integer.class) {
-                
-                editor.putInt(key, (Integer) value);
-                
-            } else if (type == Long.class) {
-                
-                editor.putLong(key, (Long) value);
-                
-            } else if (type == String.class) {
-                
-                editor.putString(key, (String) value);
-                
-            } else {
-                throw new UnsupportedOperationException(String.format(
-                        Locale.ENGLISH,
-                        "Saving type %1$s is not supported",
-                        type.getName()));
-            }
+            typeAdapterApplicator.applyPut(key, getValueArg(args));
             
             // method-level strategy > class-level strategy
             final SaveMode mode;
@@ -230,44 +210,13 @@ class StoreBoxInvocationHandler implements InvocationHandler {
         } else {
             /*
              * Get.
-             * 
-             * We wrap any primitive types to their boxed equivalents, as this
-             * makes type safety a bit nicer.
              */
-            final Class<?> type = TypeUtil.wrapToBoxedType(method.getReturnType());
-            final boolean typePrimitive = method.getReturnType().isPrimitive();
-            
-            if (type == Boolean.class) {
-
-                return prefs.getBoolean(key, getDefaultValueArg(
-                        method, Boolean.class, typePrimitive, args));
-                
-            } else if (type == Float.class) {
-                
-                return prefs.getFloat(key, getDefaultValueArg(
-                        method, Float.class, typePrimitive, args));
-                
-            } else if (type == Integer.class) {
-                
-                return prefs.getInt(key, getDefaultValueArg(
-                        method, Integer.class, typePrimitive, args));
-                
-            } else if (type == Long.class) {
-                
-                return prefs.getLong(key, getDefaultValueArg(
-                        method, Long.class, typePrimitive, args));
-                
-            } else if (type == String.class) {
-                
-                return prefs.getString(key, getDefaultValueArg(
-                        method, String.class, typePrimitive, args));
-                
-            } else {
-                throw new UnsupportedOperationException(String.format(
-                        Locale.ENGLISH,
-                        "Retrieving type %1$s is not supported",
-                        type.getName()));
-            }
+            return typeAdapterApplicator.applyGet(
+                    key,
+                    getDefaultValueArg(args),
+                    method.getReturnType(),
+                    method.getAnnotation(DefaultValue.class),
+                    method.getAnnotation(DefaultValueOption.class));
         }
     }
     
@@ -294,89 +243,6 @@ class StoreBoxInvocationHandler implements InvocationHandler {
         
         return hashCode;
     }
-    
-    private <T> T getDefaultValueArg(
-            Method method,
-            Class<T> type,
-            boolean typePrimitive,
-            Object... args) {
-        
-        Object result = null;
-        
-        // parameter default > method-level default
-        if (args != null && args.length > 0) {
-            result = args[0];
-        }
-        if (result == null && method.isAnnotationPresent(DefaultValue.class)) {
-            final TypedValue value = new TypedValue();
-            res.getValue(
-                    method.getAnnotation(DefaultValue.class).value(),
-                    value,
-                    true);
-            
-            if (type == Boolean.class) {
-                result = value.data != 0;
-            } else if (type == Float.class) {
-                result = value.getFloat();
-            } else if (type == Integer.class) {
-                result = value.data;
-            } else if (type == Long.class) {
-                result = value.data;
-            } else if (type == String.class) {
-                if (value.string == null) {
-                    result = new Object(); // we'll fail later
-                } else {
-                    result = value.string;
-                }
-            } else {
-                throw new UnsupportedOperationException(
-                        type.getName() + " not supported");
-            }
-        }
-        
-        // default was not provided so let's see how we should create it
-        if (result == null) {
-            final boolean instantiate;
-            if (typePrimitive) {
-                instantiate = true;
-            } else {
-                // method-level option > class-level option
-                final DefaultValueMode mode;
-                if (method.isAnnotationPresent(DefaultValueOption.class)) {
-                    mode = method.getAnnotation(DefaultValueOption.class)
-                            .value();
-                } else {
-                    mode = defaultValueMode;
-                }
-                
-                switch (mode) {
-                    case EMPTY:
-                        instantiate = true;
-                        break;
-                    
-                    case NULL:
-                    default:
-                        instantiate = false;
-                }
-            }
-            
-            if (instantiate) {
-                return TypeUtil.createDefaultInstanceFor(type);
-            } else {
-                return null;
-            }
-        } else {
-            if (result.getClass() != type) {
-                throw new UnsupportedOperationException(String.format(
-                        Locale.ENGLISH,
-                        "Return type %1%s and default value type %2$s not the same",
-                        result.getClass().getName(),
-                        type.getName()));
-            } else {
-                return type.cast(result);
-            }
-        }
-    }
 
     private static Method getObjectMethod(String name, Class... types) {
         try {
@@ -392,6 +258,14 @@ class StoreBoxInvocationHandler implements InvocationHandler {
         } else {
             throw new UnsupportedOperationException(
                     "Value argument not found");
+        }
+    }
+
+    private static Object getDefaultValueArg(Object... args) {
+        if (args != null && args.length > 0) {
+            return args[0];
+        } else {
+            return null;
         }
     }
 }

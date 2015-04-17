@@ -20,6 +20,9 @@ import android.app.Activity;
 import android.content.Context;
 import android.text.TextUtils;
 
+import net.orange_box.storebox.adapters.StoreBoxTypeAdapter;
+import net.orange_box.storebox.annotations.adapters.TypeAdapter;
+import net.orange_box.storebox.annotations.adapters.TypeAdapters;
 import net.orange_box.storebox.annotations.option.DefaultValueOption;
 import net.orange_box.storebox.annotations.option.SaveOption;
 import net.orange_box.storebox.annotations.type.ActivityPreferences;
@@ -31,7 +34,9 @@ import net.orange_box.storebox.enums.PreferencesType;
 import net.orange_box.storebox.enums.SaveMode;
 
 import java.lang.reflect.Proxy;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Creates a no-thrills instance of the supplied interface, by reading any
@@ -70,6 +75,8 @@ public final class StoreBox {
         private PreferencesMode preferencesMode = PreferencesMode.MODE_PRIVATE;
         private SaveMode saveMode = SaveMode.APPLY;
         private DefaultValueMode defaultValueMode = DefaultValueMode.EMPTY;
+        private Map<Class, Class<? extends StoreBoxTypeAdapter>> typeAdapters =
+                new HashMap<>();
 
         public Builder(Context context, Class<T> cls) {
             this.context = context;
@@ -122,7 +129,8 @@ public final class StoreBox {
                             preferencesName,
                             preferencesMode,
                             saveMode,
-                            defaultValueMode));
+                            defaultValueMode,
+                            typeAdapters));
         }
         
         private void readAnnotations() {
@@ -150,6 +158,20 @@ public final class StoreBox {
             if (cls.isAnnotationPresent(DefaultValueOption.class)) {
                 defaultValueMode(cls.getAnnotation(
                         DefaultValueOption.class).value());
+            }
+            // type adapter(s)
+            if (cls.isAnnotationPresent(TypeAdapter.class)) {
+                final TypeAdapter adapter =
+                        cls.getAnnotation(TypeAdapter.class);
+                
+                typeAdapters.put(adapter.type(), adapter.adapter());
+            } else if (cls.isAnnotationPresent(TypeAdapters.class)) {
+                final TypeAdapter[] adapters =
+                        cls.getAnnotation(TypeAdapters.class).value();
+                
+                for (final TypeAdapter adapter : adapters) {
+                    typeAdapters.put(adapter.type(), adapter.adapter());
+                }
             }
         }
         
