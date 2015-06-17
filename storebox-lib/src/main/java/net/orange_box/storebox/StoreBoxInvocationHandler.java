@@ -17,12 +17,12 @@
 package net.orange_box.storebox;
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
-import android.preference.PreferenceManager;
 import android.util.TypedValue;
+
+import com.securepreferences.SecurePreferences;
 
 import net.orange_box.storebox.adapters.StoreBoxTypeAdapter;
 import net.orange_box.storebox.annotations.method.DefaultValue;
@@ -57,8 +57,8 @@ class StoreBoxInvocationHandler implements InvocationHandler {
     private static final Method OBJECT_TOSTRING =
             MethodUtils.getObjectMethod("toString");
     
-    private final SharedPreferences prefs;
-    private final SharedPreferences.Editor editor;
+    private final SecurePreferences prefs;
+    private final SecurePreferences.Editor editor;
     private final Resources res;
     
     private final SaveMode saveMode;
@@ -74,18 +74,14 @@ class StoreBoxInvocationHandler implements InvocationHandler {
         
         switch (preferencesType) {
             case ACTIVITY:
-                prefs = ((Activity) context).getPreferences(
-                        preferencesMode.value());
+                prefs = new SecurePreferences(context);
                 break;
-            
             case FILE:
-                prefs = context.getSharedPreferences(
-                        openNameValue, preferencesMode.value());
+                prefs = new SecurePreferences(context);
                 break;
-            
             case DEFAULT_SHARED:
             default:
-                prefs = PreferenceManager.getDefaultSharedPreferences(context);
+                prefs = new SecurePreferences(context);
         }
         
         editor = prefs.edit();
