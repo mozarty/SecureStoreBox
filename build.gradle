@@ -2,7 +2,15 @@ buildscript {
     repositories {
         jcenter()
     }
-    
+    android {
+        compileSdkVersion 21
+        buildToolsVersion "22.0.1"
+
+        defaultConfig {
+            minSdkVersion 9
+            targetSdkVersion 21
+        }
+    }
     dependencies {
         classpath 'com.android.tools.build:gradle:1.1.0'
         classpath 'com.github.dcendents:android-maven-plugin:1.2'
